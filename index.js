@@ -4,6 +4,8 @@ import pg from "pg";
 import "dotenv/config";
 
 const app = express();
+app.set("view engine", "ejs");
+
 const port = 3000;
 
 
@@ -20,7 +22,7 @@ db.connect();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-async function checkVisitaed() {
+async function checkVisited() {
   const result = await db.query("SELECT country_code FROM visited_countries");
 
   let visited_countries = [];
@@ -33,7 +35,7 @@ async function checkVisitaed() {
 
 // GET home page
 app.get("/", async (req, res) => {
-  const countries = await checkVisitaed();
+  const countries = await checkVisited();
   res.render("index.ejs", { countries: countries, total: countries.length });
 });
 
@@ -41,16 +43,41 @@ app.get("/", async (req, res) => {
 app.post("/add", async (req, res) => {
   const input = req.body["country"];
 
-  const result = await db.query(
-    "SELECT country_code FROM countries WHERE country_name = $1", [input]
-  );
+  try {
+    // Query to check if the country already exists
+    const result = await db.query(
+      "SELECT country_code FROM countries WHERE LOWER(country_name) LIKE '%' || $1 || '%';",
+      [input.toLowerCase()]
+    );
 
-  if (result.rows.length !== 0) {
+    // Process the query result
     const data = result.rows[0];
     const countryCode = data.country_code;
-
-    await db.query("INSERT INTO visited_countries (country_code) VALUES ($1)", [countryCode,]);
-    res.redirect("/");
+    try {
+      // Attempt to insert into visited_countries
+      await db.query(
+        "INSERT INTO visited_countries (country_code) VALUES ($1)",
+        [countryCode]
+      );
+      // If successful, redirect
+      res.redirect("/");
+    } catch (err) {
+      // Handle error for the insert query
+      const countries = await checkVisited();
+      res.render("index.ejs", {
+        countries: countries,
+        total: countries.length,
+        error: "Country has already been added, try again.",
+      });
+    }
+  } catch (err) {
+    // Handle error for the select query
+    const countries = await checkVisited();
+    res.render("index.ejs", {
+      countries: countries,
+      total: countries.length,
+      error: "Country name does not exist, try again.",
+    });
   }
 });
 
